@@ -1,535 +1,412 @@
 """
-Exercise 1 - Maths Quiz (themed, animated GUI version)
+Exercise 1 - Maths Quiz
 
-A Tkinter quiz of 10 addition/subtraction questions with three difficulty levels.
+A quiz of 10 addition and subtraction questions with three difficulty levels.
 Screens: title -> instructions -> difficulty menu -> quiz -> results.
 
-Scoring:  10 points for a correct answer on the first attempt,
-           5 points for a correct answer on the second attempt,
-           0 points if both attempts are wrong.
+Scoring: 10 points for a correct answer on the first try,
+         5 points for a correct answer on the second try,
+         0 points if both tries are wrong.
+
+The backgrounds go in an "assets" folder next to this file:
+    bg_title.gif    title screen 
+    bg_main.gif     instructions, menu and results 
+    bg_quiz.png     quiz screen
+    fonts/PirataOne-Regular.ttf    font for the title and results screens
+    fonts/Aldrich-Regular.ttf      font for everything else
 """
 
 import math
+import os
 import random
-import sys
 import time
 import tkinter as tk
-from pathlib import Path
+from tkinter import font
 
-try:
-    from PIL import Image, ImageTk
-    PILLOW_AVAILABLE = True
-except ImportError:
-    PILLOW_AVAILABLE = False
+from PIL import Image, ImageTk       # loads and resizes the background pictures
 
-# Game settings 
-QUESTIONS_PER_QUIZ = 10
-POINTS_FIRST_ATTEMPT = 10
-POINTS_SECOND_ATTEMPT = 5
-MAX_SCORE = QUESTIONS_PER_QUIZ * POINTS_FIRST_ATTEMPT  # 100
-FEEDBACK_DELAY_MS = 1200  # pause so the player can read the feedback
+# ----- settings -----
+ASSETS = os.path.join(os.path.dirname(os.path.abspath(__file__)), "assets")
+QUESTIONS = 10
+FEEDBACK_DELAY = 1200       # milliseconds the feedback stays on screen
+LOADING_SECONDS = 1.5       # the loading screen stays at least this long
+MAX_FRAMES = 30             # long GIFs are thinned out to this many frames (saves memory)
 
-# Difficulty level -> (name, smallest number, largest number)
+# Fonts. The files are in assets/fonts and the names are what the fonts are called
+# once loaded. If a font can't be loaded, BACKUP_FONT is used instead.
+FONT_FOLDER = os.path.join(ASSETS, "fonts")
+TITLE_FONT_FILE = "PirataOne-Regular.ttf"
+TITLE_FONT = "Pirata One"         # used for the title and results screens
+TEXT_FONT_FILE = "Aldrich-Regular.ttf"
+TEXT_FONT = "Aldrich"             # used for everything else
+BACKUP_FONT = "Comic Sans MS"
+WHITE = "#ffffff"
+NAVY = "#0f1b44"            # dark text for the quiz screen
+GREEN = "#15803d"
+ORANGE = "#b45309"
+RED = "#b91c1c"
+BUTTON_COLOUR = "#5b21d9"
+BUTTON_HOVER_COLOUR = "#7c3aed"
+LOADING_BACKGROUND = "#0f0a2a"
+
+# My pictures are 1920 x 1080, so every position below is for that size.
+# Each position is (x, y), the centre of the item.
+LOADING_POS = (790, 540)            # left edge of the word "Loading"
+TITLE_POS = (960, 300)
+START_POS = (960, 640)
+INSTRUCTIONS_POS = (480, 190)       # top-left corner of the instructions text
+CONTINUE_POS = (960, 960)
+MENU_HEADING_POS = (960, 250)
+MENU_POSITIONS = [(960, 450), (960, 600), (960, 750)]
+QUESTION_NUMBER_POS = (960, 250)
+SCORE_POS = (540, 250)
+PROBLEM_POS = (960, 400)
+ANSWER_POS = (960, 530)
+SUBMIT_POS = (960, 640)
+FEEDBACK_POS = (960, 730)
+RESULT_SCORE_POS = (960, 400)
+RESULT_RANK_POS = (960, 540)
+PLAY_AGAIN_POS = (700, 760)
+EXIT_POS = (1220, 760)
+
+# Difficulty level: (name, smallest number, largest number)
 LEVELS = {
-    1: ("Easy", 1, 9),            # single digit
-    2: ("Moderate", 10, 99),      # double digit
-    3: ("Advanced", 1000, 9999),  # four digit
+    1: ("Easy", 1, 9),
+    2: ("Moderate", 10, 99),
+    3: ("Advanced", 1000, 9999),
 }
 
-# Look and feel
-ASSETS = Path(__file__).parent / "assets"
-
-# Which image each screen uses. Screens can share a file
-BACKGROUND_FILES = {
-    "title": "bg_title.gif",
-    "instructions": "bg_main.gif",
-    "menu": "bg_main.gif",
-    "results": "bg_main.gif",
-    "quiz": "bg_quiz.png",
-}
-
-DESIGN_W, DESIGN_H = 1920, 1080   # all coordinates below are for this size
-TASKBAR_ALLOWANCE = 100           # screen height kept free for title bar + taskbar
-
-FONT_FILE = None                  # e.g. "my_font.ttf" (Windows only, from assets/)
-FONT_NAME = "Helvetica"           # the font's family name once installed/loaded
-FONT_STYLE = "bold"
-
-FALLBACK_BG = "#0f0a2a"           # used when an image is missing
-TEXT_COLOUR = "#ffffff"
-QUIZ_TEXT_COLOUR = "#0f1b44"      # dark navy: readable on the light-blue screen
-GOOD_COLOUR = "#15803d"           # dark green
-WARN_COLOUR = "#b45309"           # dark amber
-BAD_COLOUR = "#b91c1c"            # dark red
-BUTTON_BG = "#5b21d9"
-BUTTON_HOVER = "#7c3aed"
-BUTTON_FG = "#ffffff"
-
-# Animation settings
-MAX_GIF_FRAMES = 30     # longer gifs are thinned out (every frame costs memory)
-MIN_FRAME_DELAY_MS = 20
-MIN_LOADING_SECONDS = 1.5   # keep the loading screen up at least this long (0 = off)
-TITLE_BOB_PIXELS = 14    # how far the title text floats up and down
-
-# Where things go, in 1920 x 1080 design coordinates (x, y).
-# Adjust these to line up with your own artwork.
-LAYOUT = {
-    "title": (960, 300),
-    "startButton": (960, 640),
-    "instructionsText": (480, 190),        # top-left corner of the text block
-    "continueButton": (960, 960),
-    "menuHeading": (960, 250),
-    "menuButtons": [(960, 450), (960, 600), (960, 750)],
-    "questionCounter": (960, 250),
-    "score": (540, 250),
-    "problem": (960, 400),
-    "answerBox": (960, 530),
-    "submitButton": (960, 640),
-    "feedback": (960, 730),
-    "resultsScore": (960, 400),
-    "resultsRank": (960, 540),
-    "playAgainButton": (700, 760),
-    "exitButton": (1220, 760),
-}
+INSTRUCTIONS = """Instructions:
+1. Choose a difficulty level:
+      - Easy: numbers from 1 to 9
+      - Moderate: numbers from 10 to 99
+      - Advanced: numbers from 1000 to 9999
+2. Answer the questions:
+      - You get 10 problems.
+      - Type your answer and press Submit (or Enter).
+3. Scoring:
+      - Correct on the first try = 10 points
+      - Correct on the second try = 5 points
+      - Wrong twice = the correct answer is shown
+4. After the quiz:
+      - See your total score and rank.
+      - Play again or exit."""
 
 
-# Pure helper functions (no GUI code, so they are easy to test with print())
-def randomInt(level):
-    """Return a random integer whose size depends on the difficulty level.
-
-    Easy -> 1 digit, Moderate -> 2 digits, Advanced -> 4 digits.
-    """
-    _, minimum, maximum = LEVELS[level]
-    return random.randint(minimum, maximum)
-
-
-def decideOperation():
-    """Randomly choose between addition and subtraction; returns '+' or '-'."""
-    return random.choice(["+", "-"])
-
-
-def getRank(score):
-    """Turn a score out of 100 into a letter grade."""
-    if score > 90:
-        return "A+"
-    if score >= 80:
-        return "A"
-    if score >= 70:
-        return "B"
-    if score >= 60:
-        return "C"
-    if score >= 50:
-        return "D"
-    return "F"
-
-
-def buildInstructions():
-    """Build the instructions text from the settings so it never goes out of date."""
-    lines = ["Instructions:", "1. Choose a difficulty level:"]
-    for name, low, high in LEVELS.values():
-        lines.append(f"      - {name}: numbers from {low} to {high}")
-    lines += [
-        "2. Answer the questions:",
-        f"      - You get {QUESTIONS_PER_QUIZ} problems.",
-        "      - Type your answer and press Submit (or Enter).",
-        "3. Scoring:",
-        f"      - Correct on the first try = {POINTS_FIRST_ATTEMPT} points",
-        f"      - Correct on the second try = {POINTS_SECOND_ATTEMPT} points",
-        "      - Wrong twice = the correct answer is shown",
-        "4. After the quiz:",
-        "      - See your total score and rank.",
-        "      - Play again or exit.",
-    ]
-    return "\n".join(lines)
-
-
-def enableHighDpi():
-    """On Windows, stop display scaling from blurring the window."""
+def stopWindowsBlurring():
+    """On Windows, stop display scaling from making the window look blurry."""
     try:
         import ctypes
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
     except Exception:
-        pass  # not Windows, or not supported: nothing to do
+        pass     # not Windows, so there is nothing to do
 
 
-def loadCustomFont():
-    """Load a .ttf from the assets folder for this program only (Windows)."""
-    if FONT_FILE is None or sys.platform != "win32":
-        return
-    path = ASSETS / FONT_FILE
-    if not path.exists():
-        return
+def loadFonts():
+    """On Windows, make the font files in assets/fonts available to this program only."""
     try:
         import ctypes
-        FR_PRIVATE = 0x10
-        ctypes.windll.gdi32.AddFontResourceExW(str(path), FR_PRIVATE, 0)
+        for filename in (TITLE_FONT_FILE, TEXT_FONT_FILE):
+            path = os.path.join(FONT_FOLDER, filename)
+            ctypes.windll.gdi32.AddFontResourceExW(path, 0x10, 0)   # 0x10 = just this program
     except Exception:
-        pass
+        pass     # not Windows, so the fonts must be installed on the computer
 
 
-# The quiz itself. A class keeps the game state (score, question number, etc.)
+def randomInt(level):
+    """Return a random number for the chosen difficulty level."""
+    name, smallest, largest = LEVELS[level]
+    return random.randint(smallest, largest)
+
+
+def decideOperation():
+    """Randomly choose + or -."""
+    return random.choice(["+", "-"])
+
+
+def getRank(score):
+    """Turn a score out of 100 into a grade."""
+    if score > 90:
+        return "A+"
+    elif score >= 80:
+        return "A"
+    elif score >= 70:
+        return "B"
+    elif score >= 60:
+        return "C"
+    elif score >= 50:
+        return "D"
+    else:
+        return "F"
+
+
 class MathsQuiz:
     def __init__(self, root):
         self.root = root
-        self.root.title("Math Quiz")
-        self.root.resizable(False, False)
+        root.title("Maths Quiz")
+        root.resizable(False, False)
+        root.bind("<Escape>", lambda event: root.destroy())
 
-        if not PILLOW_AVAILABLE:
-            print("Pillow is not installed, so images are disabled. "
-                  "Run:  pip install pillow")
+        # Use the backup font for any font that couldn't be loaded
+        installed = font.families()
+        self.titleFont = TITLE_FONT if TITLE_FONT in installed else BACKUP_FONT
+        self.textFont = TEXT_FONT if TEXT_FONT in installed else BACKUP_FONT
 
-        # Work out the window size: shrink to fit the screen, never enlarge
-        screenW = root.winfo_screenwidth()
-        screenH = root.winfo_screenheight()
-        self.scale = min(screenW / DESIGN_W,
-                         (screenH - TASKBAR_ALLOWANCE) / DESIGN_H,
-                         1)
-        self.width = int(DESIGN_W * self.scale)
-        self.height = int(DESIGN_H * self.scale)
+        # Make the window smaller if the screen is too small for 1920 x 1080
+        screenWidth = root.winfo_screenwidth()
+        screenHeight = root.winfo_screenheight()
+        self.scale = min(1, screenWidth / 1920, (screenHeight - 100) / 1080)
+        self.width = int(1920 * self.scale)
+        self.height = int(1080 * self.scale)
 
         self.canvas = tk.Canvas(root, width=self.width, height=self.height,
-                                highlightthickness=0, bg=FALLBACK_BG)
+                                highlightthickness=0, bg=LOADING_BACKGROUND)
         self.canvas.pack()
 
-        # Game state
+        # Every screen gets a new number. Animations remember the number of the screen they started on, and stop when it no longer matches.
+        self.screenNumber = 0
+
+        # The game's information
         self.level = 1
         self.score = 0
         self.questionNumber = 1
         self.attempt = 1
         self.correctAnswer = 0
-        self.acceptingInput = False
 
-        # Things we create per screen (so they can be cleaned up)
-        self.widgets = []
-        self.bgItem = None
-        self.loadingText = None
-        self.titleItem = None
-        self.questionItem = None
-        self.scoreItem = None
-        self.problemItem = None
-        self.feedbackItem = None
-        self.answerEntry = None
-        self.submitButton = None
+        # Loading screen: a plain background with the word "Loading" and moving dots.
+        startTime = time.time()
+        self.loadingText = self.write(LOADING_POS, "Loading", 70, anchor="w")
+        self.animateLoading(0)
 
-        # Scheduled animation jobs (cancelled whenever the screen changes)
-        self.bgJob = None
-        self.titleJob = None
-        self.nextQuestionJob = None
-        self.loadingJob = None
+        # The three backgrounds, saved on self so Python doesn't delete them.
+        # Each one is a list of frames and a delay: a GIF has many, a PNG has one.
+        self.titlePicture = self.loadPicture("bg_title.gif")
+        self.mainPicture = self.loadPicture("bg_main.gif")
+        self.quizPicture = self.loadPicture("bg_quiz.png")
 
-        # Loading screen: plain background with animated "Loading..." text.
-        # loadBackground() refreshes the window after every frame it loads,
-        # which is what keeps the dots moving while the images load.
-        loadingStart = time.time()
-        self.loadingText = self.drawText(DESIGN_W / 2 - 170, DESIGN_H / 2,
-                                         "Loading", 70, anchor="w")
-        self.animateLoadingText(0)
-        self.keepAlive()
-
-        # Images are kept on self, otherwise Python deletes them and they vanish
-        # (each file is loaded once, even if several screens share it)
-        loaded = {}
-        self.backgrounds = {}
-        for screen, filename in BACKGROUND_FILES.items():
-            if filename not in loaded:
-                loaded[filename] = self.loadBackground(ASSETS / filename)
-            self.backgrounds[screen] = loaded[filename]
-
-        # Don't let the loading screen vanish in a flash
-        while time.time() - loadingStart < MIN_LOADING_SECONDS:
-            self.keepAlive()
+        # Keep the loading screen up for a minimum time so it doesn't flash past
+        while time.time() - startTime < LOADING_SECONDS:
+            self.root.update()
             time.sleep(0.01)
-
-        # Enter submits the answer; Escape closes the program
-        self.root.bind("<Return>", self.onEnterPressed)
-        self.root.bind("<Escape>", lambda event: self.root.destroy())
 
         self.displayTitle()
 
-    #scaling and drawing helpers
-    def s(self, value):
-        """Convert a 1920x1080 design coordinate to the real window size."""
-        return int(value * self.scale)
-
-    def fontSize(self, size):
-        """Scale a font size given in 1920x1080 pixels.
-
-        Tkinter treats negative font sizes as pixels (positive means points),
-        which keeps text the same size relative to your artwork on any screen.
+    # ----- helpers -----
+    def write(self, position, text, size, colour=WHITE, title=False, **options):
+        """Write text on the canvas.
+        title=True uses the title font, otherwise the normal text font.
         """
-        return -max(8, int(size * self.scale))
-
-    def drawText(self, x, y, text, size, colour=TEXT_COLOUR, anchor="center", **options):
-        """Draw text on the canvas (canvas text has a see-through background)."""
+        x, y = position
+        fontName = self.titleFont if title else self.textFont
         return self.canvas.create_text(
-            self.s(x), self.s(y), text=text, fill=colour, anchor=anchor,
-            font=(FONT_NAME, self.fontSize(size), FONT_STYLE), **options
-        )
+            x * self.scale, y * self.scale, text=text, fill=colour,
+            font=(fontName, -int(size * self.scale), "bold"),   # minus = size in pixels
+            **options)
 
-    def addButton(self, text, command, x, y, width=14):
-        """Place a styled button on the canvas, with a hover colour change."""
+    def addButton(self, position, text, command, width=14, title=False):
+        """Put a button on the canvas. It changes colour when the mouse is over it."""
+        x, y = position
+        fontName = self.titleFont if title else self.textFont
         button = tk.Button(
             self.canvas, text=text, command=command, width=width,
-            font=(FONT_NAME, self.fontSize(42), FONT_STYLE),
-            bg=BUTTON_BG, fg=BUTTON_FG,
-            activebackground=BUTTON_HOVER, activeforeground=BUTTON_FG,
-            bd=0, relief="flat", cursor="hand2",
-        )
-        button.bind("<Enter>", lambda event: button.config(bg=BUTTON_HOVER))
-        button.bind("<Leave>", lambda event: button.config(bg=BUTTON_BG))
-        self.canvas.create_window(self.s(x), self.s(y), window=button)
-        self.widgets.append(button)
+            font=(fontName, -int(42 * self.scale), "bold"),
+            bg=BUTTON_COLOUR, fg=WHITE, activebackground=BUTTON_HOVER_COLOUR,
+            activeforeground=WHITE, bd=0, cursor="hand2")
+        button.bind("<Enter>", lambda event: button.config(bg=BUTTON_HOVER_COLOUR))
+        button.bind("<Leave>", lambda event: button.config(bg=BUTTON_COLOUR))
+        self.canvas.create_window(x * self.scale, y * self.scale, window=button)
         return button
 
-    #loading images 
-    def keepAlive(self):
-        """Let Tkinter redraw and run animations while we are busy loading."""
-        try:
-            self.root.update()
-        except tk.TclError:
-            sys.exit()  # the window was closed during loading
-
-    def loadBackground(self, path):
-        """Load a PNG or GIF as (frames, delays), scaled to the window.
-
-        A still image gives one frame; an animated GIF gives several.
-        Returns None if the file is missing or Pillow isn't installed.
-        """
-        if not PILLOW_AVAILABLE:
-            return None
-        if not path.exists():
-            # Say so, otherwise a wrong file name just gives a plain background
-            print(f"Warning: background image not found: {path}")
+    # ----- pictures and animation -----
+    def loadPicture(self, filename):
+        """Load a PNG or GIF, resized to fit the window. Returns (frames, delay)."""
+        path = os.path.join(ASSETS, filename)
+        if not os.path.exists(path):
+            print("Warning: picture not found:", path)
             return None
 
         image = Image.open(path)
-        total = getattr(image, "n_frames", 1)
-        # Very long GIFs eat memory, so keep every nth frame (and lengthen delays)
-        stride = max(1, math.ceil(total / MAX_GIF_FRAMES))
-        # Still images get the slower, sharper resize; animation uses the fast one
+        total = getattr(image, "n_frames", 1)          # how many frames the file has
+        step = max(1, total // MAX_FRAMES)             # use every 'step'th frame
+        delay = max(20, image.info.get("duration", 50) * step)   # milliseconds per frame
+        # A still picture can use the slower, sharper resize. Frames of a GIF use the quick one.
         method = Image.LANCZOS if total == 1 else Image.BILINEAR
 
-        frames, delays = [], []
-        for index in range(0, total, stride):
-            image.seek(index)
-            delay = max(MIN_FRAME_DELAY_MS, image.info.get("duration", 50) * stride)
+        frames = []
+        for number in range(0, total, step):
+            image.seek(number)
             frame = image.convert("RGB").resize((self.width, self.height), method)
             frames.append(ImageTk.PhotoImage(frame))
-            delays.append(delay)
-            self.keepAlive()  # keeps the loading animation moving
-        return frames, delays
+            self.root.update()          # keeps the loading dots moving while we load
+        return frames, delay
 
-    #screen management 
-    def stopAnimations(self):
-        """Cancel every running animation. Called whenever the screen changes."""
-        for job in (self.bgJob, self.titleJob, self.nextQuestionJob, self.loadingJob):
-            if job is not None:
-                self.root.after_cancel(job)
-        self.bgJob = self.titleJob = self.nextQuestionJob = self.loadingJob = None
+    def playBackground(self, frames, delay, number, screen):
+        """Show one frame of an animated background, then schedule the next one."""
+        if screen != self.screenNumber:     # the screen has changed, so stop
+            return
+        self.canvas.itemconfig(self.backgroundItem, image=frames[number])
+        nextNumber = (number + 1) % len(frames)     # back to 0 after the last frame
+        self.root.after(delay, self.playBackground, frames, delay, nextNumber, screen)
 
-    def showScreen(self, name):
-        """Wipe the previous screen and draw this screen's background."""
-        self.stopAnimations()
-        self.canvas.delete("all")
-        for widget in self.widgets:
-            widget.destroy()
-        self.widgets = []
-        self.acceptingInput = False
-
-        background = self.backgrounds.get(name)
-        if background is not None:
-            frames, _ = background
-            self.bgItem = self.canvas.create_image(0, 0, image=frames[0], anchor="nw")
-            if len(frames) > 1:
-                self.playBackground(background, 0)
-
-    # animation 
-    def playBackground(self, background, index):
-        """Show one frame of the animated background, then schedule the next."""
-        frames, delays = background
-        self.canvas.itemconfig(self.bgItem, image=frames[index])
-        nextIndex = (index + 1) % len(frames)
-        self.bgJob = self.root.after(delays[index], self.playBackground,
-                                     background, nextIndex)
-
-    def animateLoadingText(self, step):
-        """Cycle the dots after 'Loading': none, one, two, three, repeat."""
+    def animateLoading(self, step):
+        """Add one more dot to 'Loading' every 0.4 seconds (none, 1, 2, 3, repeat)."""
+        if self.screenNumber != 0:          # the loading screen is finished
+            return
         self.canvas.itemconfig(self.loadingText, text="Loading" + "." * (step % 4))
-        self.loadingJob = self.root.after(400, self.animateLoadingText, step + 1)
+        self.root.after(400, self.animateLoading, step + 1)
 
-    def bobTitle(self, step):
-        """Float the title text gently up and down using a sine wave."""
-        offset = math.sin(step / 8) * self.s(TITLE_BOB_PIXELS)
-        x, y = LAYOUT["title"]
-        self.canvas.coords(self.titleItem, self.s(x), self.s(y) + offset)
-        self.titleJob = self.root.after(30, self.bobTitle, step + 1)
+    def floatTitle(self, step, screen):
+        """Move the title up and down using a sine wave."""
+        if screen != self.screenNumber:
+            return
+        x, y = TITLE_POS
+        offset = math.sin(step / 8) * 14 * self.scale      # moves up to 14 pixels
+        self.canvas.coords(self.titleText, x * self.scale, y * self.scale + offset)
+        self.root.after(30, self.floatTitle, step + 1, screen)
 
-    #screens 
+    def newScreen(self, picture):
+        """Clear the old screen and draw a new background."""
+        self.screenNumber += 1          # this stops the animations of the old screen
+        for widget in self.canvas.winfo_children():
+            widget.destroy()            # removes the old buttons and entry box
+        self.canvas.delete("all")
+
+        if picture is not None:
+            frames, delay = picture
+            self.backgroundItem = self.canvas.create_image(0, 0, image=frames[0], anchor="nw")
+            if len(frames) > 1:         # a GIF with several frames, so play it
+                self.playBackground(frames, delay, 0, self.screenNumber)
+
+    # ----- screens -----
     def displayTitle(self):
-        """Title screen: background, floating title text, Start button."""
-        self.showScreen("title")
-
-        self.titleItem = self.drawText(*LAYOUT["title"], "Maths Quiz", 130)
-        self.bobTitle(0)
-        self.addButton("START", self.displayInstructions, *LAYOUT["startButton"])
+        self.newScreen(self.titlePicture)
+        self.titleText = self.write(TITLE_POS, "Maths Quiz", 170, title=True)
+        self.floatTitle(0, self.screenNumber)
+        self.addButton(START_POS, "START", self.displayInstructions, title=True)
 
     def displayInstructions(self):
-        """Instructions screen."""
-        self.showScreen("instructions")
-        self.drawText(*LAYOUT["instructionsText"], buildInstructions(), 36,
-                      anchor="nw", justify="left")
-        self.addButton("CONTINUE", self.displayMenu, *LAYOUT["continueButton"])
+        self.newScreen(self.mainPicture)
+        self.write(INSTRUCTIONS_POS, INSTRUCTIONS, 36, anchor="nw", justify="left")
+        self.addButton(CONTINUE_POS, "CONTINUE", self.displayMenu)
 
     def displayMenu(self):
-        """Show the difficulty level menu."""
-        self.showScreen("menu")
-        self.drawText(*LAYOUT["menuHeading"], "DIFFICULTY LEVEL", 80)
-
-        for (level, (name, _, _)), position in zip(LEVELS.items(), LAYOUT["menuButtons"]):
-            self.addButton(
-                f"{level}. {name}",
-                # level=level locks in the current value for each button
-                lambda level=level: self.startQuiz(level),
-                *position, width=16,
-            )
+        """The difficulty menu: one button for each level."""
+        self.newScreen(self.mainPicture)
+        self.write(MENU_HEADING_POS, "DIFFICULTY LEVEL", 110, title=True)
+        for level in LEVELS:
+            name = LEVELS[level][0]
+            # level=level makes each button remember its own level number
+            self.addButton(MENU_POSITIONS[level - 1], f"{level}. {name}",
+                           lambda level=level: self.startQuiz(level), width=16)
 
     def startQuiz(self, level):
-        """Reset the game state, build the quiz screen and ask question 1."""
+        """Reset the score, build the quiz screen and ask the first question."""
         self.level = level
         self.score = 0
         self.questionNumber = 1
-        self.attempt = 1
 
-        self.showScreen("quiz")
+        self.newScreen(self.quizPicture)
+        self.questionText = self.write(QUESTION_NUMBER_POS, "", 40, NAVY)
+        self.scoreText = self.write(SCORE_POS, "", 40, NAVY)
+        self.problemText = self.write(PROBLEM_POS, "", 110, NAVY)
+        self.feedbackText = self.write(FEEDBACK_POS, "", 40, NAVY)
 
-        self.questionItem = self.drawText(*LAYOUT["questionCounter"], "", 40, QUIZ_TEXT_COLOUR)
-        self.scoreItem = self.drawText(*LAYOUT["score"], "", 40, QUIZ_TEXT_COLOUR)
-        self.problemItem = self.drawText(*LAYOUT["problem"], "", 110, QUIZ_TEXT_COLOUR)
-
+        # The box the player types their answer into
         self.answerEntry = tk.Entry(
-            self.canvas, font=(FONT_NAME, self.fontSize(56), FONT_STYLE), width=8,
-            justify="center", bg="white", fg="#1b1b3a",
-            insertbackground="#1b1b3a", relief="flat",
-        )
-        self.canvas.create_window(self.s(LAYOUT["answerBox"][0]),
-                                  self.s(LAYOUT["answerBox"][1]),
-                                  window=self.answerEntry)
-        self.widgets.append(self.answerEntry)
+            self.canvas, font=(self.textFont, -int(56 * self.scale), "bold"),
+            width=8, justify="center")
+        self.canvas.create_window(ANSWER_POS[0] * self.scale,
+                                  ANSWER_POS[1] * self.scale, window=self.answerEntry)
+        self.answerEntry.bind("<Return>", lambda event: self.submitAnswer())
 
-        self.submitButton = self.addButton("SUBMIT", self.submitAnswer, *LAYOUT["submitButton"])
-        self.feedbackItem = self.drawText(*LAYOUT["feedback"], "", 40, QUIZ_TEXT_COLOUR,
-                                          width=self.s(1200), justify="center")
-
+        self.submitButton = self.addButton(SUBMIT_POS, "SUBMIT", self.submitAnswer)
         self.displayProblem()
 
-    def setFeedback(self, message, colour=QUIZ_TEXT_COLOUR):
-        """Show a message under the answer box."""
-        self.canvas.itemconfig(self.feedbackItem, text=message, fill=colour)
-
-    def updateLabels(self):
-        """Refresh the question counter and the score."""
-        self.canvas.itemconfig(
-            self.questionItem,
-            text=f"Question {self.questionNumber} of {QUESTIONS_PER_QUIZ}")
-        self.canvas.itemconfig(self.scoreItem, text=f"Score: {self.score}")
-
+    # ----- the quiz -----
     def displayProblem(self):
-        """Generate a new question, show it and get ready to accept an answer."""
-        self.nextQuestionJob = None
-
-        # All questions asked? Go to the results screen.
-        if self.questionNumber > QUESTIONS_PER_QUIZ:
+        """Make a new question and show it."""
+        # After the last question, show the results instead
+        if self.questionNumber > QUESTIONS:
             self.displayResults()
             return
 
-        num1 = randomInt(self.level)
-        num2 = randomInt(self.level)
+        number1 = randomInt(self.level)
+        number2 = randomInt(self.level)
         operation = decideOperation()
-
         if operation == "+":
-            self.correctAnswer = num1 + num2
+            self.correctAnswer = number1 + number2
         else:
-            self.correctAnswer = num1 - num2  # may be negative, that's fine
+            self.correctAnswer = number1 - number2
 
         self.attempt = 1
-        self.canvas.itemconfig(self.problemItem, text=f"{num1} {operation} {num2} =")
-        self.updateLabels()
-        self.setFeedback("")
+        self.canvas.itemconfig(self.problemText, text=f"{number1} {operation} {number2} =")
+        self.canvas.itemconfig(self.questionText,
+                               text=f"Question {self.questionNumber} of {QUESTIONS}")
+        self.canvas.itemconfig(self.scoreText, text=f"Score: {self.score}")
+        self.canvas.itemconfig(self.feedbackText, text="")
 
-        # Re-enable the controls (they are disabled while feedback is showing)
+        # Turn the entry box and button back on (they are off while feedback shows)
         self.answerEntry.config(state="normal")
         self.submitButton.config(state="normal")
         self.answerEntry.delete(0, tk.END)
         self.answerEntry.focus_set()
-        self.acceptingInput = True
 
     def isCorrect(self, userAnswer):
-        """Check the answer, update the score and show a suitable message.
-
-        Returns True if the answer was right, otherwise False.
-        """
+        """Check the answer, change the score and show a message. Returns True or False."""
         if userAnswer == self.correctAnswer:
-            points = POINTS_FIRST_ATTEMPT if self.attempt == 1 else POINTS_SECOND_ATTEMPT
+            if self.attempt == 1:
+                points = 10
+            else:
+                points = 5
             self.score += points
-            self.setFeedback(f"Correct! +{points} points", GOOD_COLOUR)
+            self.canvas.itemconfig(self.feedbackText, fill=GREEN,
+                                   text=f"Correct! +{points} points")
             return True
 
         if self.attempt == 1:
-            self.setFeedback("Not quite. Have one more go!", WARN_COLOUR)
+            self.canvas.itemconfig(self.feedbackText, fill=ORANGE,
+                                   text="Not quite. Have one more go!")
         else:
-            self.setFeedback(f"Wrong again. The answer was {self.correctAnswer}.", BAD_COLOUR)
+            self.canvas.itemconfig(self.feedbackText, fill=RED,
+                                   text=f"Wrong again. The answer was {self.correctAnswer}.")
         return False
 
-    def displayResults(self):
-        """Show the final score out of 100, the rank, and the play-again option."""
-        self.showScreen("results")
-
-        rank = getRank(self.score)
-        self.drawText(*LAYOUT["resultsScore"], f"Your score: {self.score} / {MAX_SCORE}", 90)
-        self.drawText(*LAYOUT["resultsRank"], f"Rank: {rank}", 110)
-
-        self.addButton("PLAY AGAIN", self.displayMenu, *LAYOUT["playAgainButton"])
-        self.addButton("EXIT", self.root.destroy, *LAYOUT["exitButton"])
-
-    #event handlers 
-    def onEnterPressed(self, event):
-        """Enter key does the same as clicking Submit (only during a quiz)."""
-        if self.acceptingInput:
-            self.submitAnswer()
-
     def submitAnswer(self):
-        """Read the entry box, validate it and decide what happens next."""
-        if not self.acceptingInput:
-            return
-
-        text = self.answerEntry.get().strip()
+        """Runs when the player presses Submit or Enter."""
         try:
-            userAnswer = int(text)
+            userAnswer = int(self.answerEntry.get())
         except ValueError:
-            # Not a whole number: warn them but don't use up an attempt
-            self.setFeedback("Please enter a whole number (e.g. 12 or -5).", BAD_COLOUR)
+            # Not a whole number, so show a message and don't use up a try
+            self.canvas.itemconfig(self.feedbackText, fill=RED,
+                                   text="Please enter a whole number (e.g. 12 or -5).")
             return
 
         correct = self.isCorrect(userAnswer)
-        self.updateLabels()
+        self.canvas.itemconfig(self.scoreText, text=f"Score: {self.score}")
 
         if correct or self.attempt == 2:
-            # Question finished: lock the controls briefly, then move on
-            self.acceptingInput = False
+            # This question is finished. Switch off the controls for a moment
+            # so the player can read the message, then show the next question.
             self.answerEntry.config(state="disabled")
             self.submitButton.config(state="disabled")
             self.questionNumber += 1
-            self.nextQuestionJob = self.root.after(FEEDBACK_DELAY_MS, self.displayProblem)
+            self.root.after(FEEDBACK_DELAY, self.displayProblem)
         else:
-            # First attempt wrong: allow a second try at the same question
+            # Wrong the first time, so they get a second go at the same question
             self.attempt = 2
             self.answerEntry.delete(0, tk.END)
-            self.answerEntry.focus_set()
 
-# Program entry point
+    def displayResults(self):
+        self.newScreen(self.mainPicture)
+        self.write(RESULT_SCORE_POS, f"Your score: {self.score} / 100", 110, title=True)
+        self.write(RESULT_RANK_POS, f"Rank: {getRank(self.score)}", 140, title=True)
+        self.addButton(PLAY_AGAIN_POS, "PLAY AGAIN", self.displayMenu, title=True)
+        self.addButton(EXIT_POS, "EXIT", self.root.destroy, title=True)
+
+
 def main():
-    enableHighDpi()
-    loadCustomFont()
+    stopWindowsBlurring()      # must be done before the window is created
+    loadFonts()                # so is this
     root = tk.Tk()
     MathsQuiz(root)
     root.mainloop()
