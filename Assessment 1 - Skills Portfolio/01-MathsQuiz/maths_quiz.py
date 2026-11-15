@@ -10,7 +10,7 @@ Scoring: 10 points for a correct answer on the first try,
 
 The backgrounds go in an "assets" folder next to this file:
     bg_title.gif    title screen 
-    bg_main.gif     instructions, menu and results 
+    bg_main.gif     instructions, menu and results
     bg_quiz.png     quiz screen
     fonts/PirataOne-Regular.ttf    font for the title and results screens
     fonts/Aldrich-Regular.ttf      font for everything else
@@ -144,7 +144,8 @@ class MathsQuiz:
     def __init__(self, root):
         self.root = root
         root.title("Maths Quiz")
-        root.resizable(False, False)
+        root.configure(bg="black")
+        root.minsize(640, 360)
         root.bind("<Escape>", lambda event: root.destroy())
 
         # Use the backup font for any font that couldn't be loaded
@@ -152,18 +153,19 @@ class MathsQuiz:
         self.titleFont = TITLE_FONT if TITLE_FONT in installed else BACKUP_FONT
         self.textFont = TEXT_FONT if TEXT_FONT in installed else BACKUP_FONT
 
-        # Make the window smaller if the screen is too small for 1920 x 1080
         screenWidth = root.winfo_screenwidth()
         screenHeight = root.winfo_screenheight()
-        self.scale = min(1, screenWidth / 1920, (screenHeight - 100) / 1080)
-        self.width = int(1920 * self.scale)
-        self.height = int(1080 * self.scale)
+        scale = min(1, screenWidth / 1920, (screenHeight - 100) / 1080)
+        root.geometry(f"{int(1920 * scale)}x{int(1080 * scale)}")
 
-        self.canvas = tk.Canvas(root, width=self.width, height=self.height,
-                                highlightthickness=0, bg=LOADING_BACKGROUND)
-        self.canvas.pack()
+        # The canvas holds the picture. place() keeps it in the middle, so if the
+        # window is not the same shape as the picture the extra space shows as black borders.
+        self.canvas = tk.Canvas(root, highlightthickness=0, bg=LOADING_BACKGROUND)
+        self.canvas.place(relx=0.5, rely=0.5, anchor="center")
+        self.setSize(scale)
 
-        # Every screen gets a new number. Animations remember the number of the screen they started on, and stop when it no longer matches.
+        # Every screen gets a new number. Animations remember the number of the
+        # screen they started on, and stop when it no longer matches.
         self.screenNumber = 0
 
         # The game's information
@@ -173,6 +175,15 @@ class MathsQuiz:
         self.attempt = 1
         self.correctAnswer = 0
 
+        # What is on the quiz screen, kept so it can be drawn again after a resize
+        self.counterString = ""
+        self.problemString = ""
+        self.feedbackString = ""
+        self.feedbackColour = NAVY
+
+        self.screen = "loading"        # which screen is showing
+        self.resizeTimer = None        # remembers the waiting resize (see onResize)
+
         # Loading screen: a plain background with the word "Loading" and moving dots.
         startTime = time.time()
         self.loadingText = self.write(LOADING_POS, "Loading", 70, anchor="w")
@@ -180,9 +191,7 @@ class MathsQuiz:
 
         # The three backgrounds, saved on self so Python doesn't delete them.
         # Each one is a list of frames and a delay: a GIF has many, a PNG has one.
-        self.titlePicture = self.loadPicture("bg_title.gif")
-        self.mainPicture = self.loadPicture("bg_main.gif")
-        self.quizPicture = self.loadPicture("bg_quiz.png")
+        self.loadPictures(True)
 
         # Keep the loading screen up for a minimum time so it doesn't flash past
         while time.time() - startTime < LOADING_SECONDS:
@@ -191,9 +200,63 @@ class MathsQuiz:
 
         self.displayTitle()
 
+        # From now on, whenever the window changes size (maximise, restore or dragging
+        # the edge) onResize runs. This is bound last so it doesn't run during setup.
+        root.bind("<Configure>", self.onResize)
+
+    # ----- window size -----
+    def setSize(self, scale):
+        """Use this scale for everything: the canvas, the pictures and the text."""
+        self.scale = scale
+        self.width = int(1920 * scale)
+        self.height = int(1080 * scale)
+        self.canvas.config(width=self.width, height=self.height)
+
+    def loadPictures(self, showProgress):
+        """Load the three backgrounds. They are saved on self so Python doesn't delete them."""
+        self.titlePicture = self.loadPicture("bg_title.gif", showProgress)
+        self.mainPicture = self.loadPicture("bg_main.gif", showProgress)
+        self.quizPicture = self.loadPicture("bg_quiz.png", showProgress)
+
+    def onResize(self, event):
+        """The window changed size. Wait until the changing stops, then fit the picture."""
+        if event.widget is not self.root:       # ignore events from things inside the window
+            return
+        if self.resizeTimer is not None:
+            self.root.after_cancel(self.resizeTimer)
+        # Dragging an edge fires this many times a second, so we wait 300 ms of calm
+        self.resizeTimer = self.root.after(300, self.fitToWindow)
+
+    def fitToWindow(self):
+        """Make the picture as big as the window allows, then draw the screen again."""
+        self.resizeTimer = None
+        scale = min(self.root.winfo_width() / 1920, self.root.winfo_height() / 1080, 1)
+        if abs(scale - self.scale) < 0.01 or self.screen == "loading":
+            return                              # the picture already fits
+        self.screenNumber += 1                  # stops the animations of the old pictures
+        # Let go of the old pictures first, so they don't use memory at the same time as the new ones
+        self.titlePicture = self.mainPicture = self.quizPicture = None
+        self.setSize(scale)
+        self.loadPictures(False)
+        self.redraw()
+
+    def redraw(self):
+        """Draw the current screen again at the new size."""
+        if self.screen == "title":
+            self.displayTitle()
+        elif self.screen == "instructions":
+            self.displayInstructions()
+        elif self.screen == "menu":
+            self.displayMenu()
+        elif self.screen == "quiz":
+            self.redrawQuiz()
+        else:
+            self.displayResults()
+
     # ----- helpers -----
     def write(self, position, text, size, colour=WHITE, title=False, **options):
-        """Write text on the canvas.
+        """Write text on the canvas. Position and size are for the 1920 x 1080 design.
+
         title=True uses the title font, otherwise the normal text font.
         """
         x, y = position
@@ -218,7 +281,7 @@ class MathsQuiz:
         return button
 
     # ----- pictures and animation -----
-    def loadPicture(self, filename):
+    def loadPicture(self, filename, showProgress=False):
         """Load a PNG or GIF, resized to fit the window. Returns (frames, delay)."""
         path = os.path.join(ASSETS, filename)
         if not os.path.exists(path):
@@ -237,7 +300,8 @@ class MathsQuiz:
             image.seek(number)
             frame = image.convert("RGB").resize((self.width, self.height), method)
             frames.append(ImageTk.PhotoImage(frame))
-            self.root.update()          # keeps the loading dots moving while we load
+            if showProgress:
+                self.root.update()      # keeps the loading dots moving while we load
         return frames, delay
 
     def playBackground(self, frames, delay, number, screen):
@@ -260,12 +324,13 @@ class MathsQuiz:
         if screen != self.screenNumber:
             return
         x, y = TITLE_POS
-        offset = math.sin(step / 8) * 14 * self.scale      # moves up to 14 pixels
+        offset = math.sin(step / 8) * 14 * self.scale     
         self.canvas.coords(self.titleText, x * self.scale, y * self.scale + offset)
         self.root.after(30, self.floatTitle, step + 1, screen)
 
-    def newScreen(self, picture):
+    def newScreen(self, name, picture):
         """Clear the old screen and draw a new background."""
+        self.screen = name
         self.screenNumber += 1          # this stops the animations of the old screen
         for widget in self.canvas.winfo_children():
             widget.destroy()            # removes the old buttons and entry box
@@ -279,19 +344,19 @@ class MathsQuiz:
 
     # ----- screens -----
     def displayTitle(self):
-        self.newScreen(self.titlePicture)
+        self.newScreen("title", self.titlePicture)
         self.titleText = self.write(TITLE_POS, "Maths Quiz", 170, title=True)
         self.floatTitle(0, self.screenNumber)
         self.addButton(START_POS, "START", self.displayInstructions, title=True)
 
     def displayInstructions(self):
-        self.newScreen(self.mainPicture)
+        self.newScreen("instructions", self.mainPicture)
         self.write(INSTRUCTIONS_POS, INSTRUCTIONS, 36, anchor="nw", justify="left")
         self.addButton(CONTINUE_POS, "CONTINUE", self.displayMenu)
 
     def displayMenu(self):
         """The difficulty menu: one button for each level."""
-        self.newScreen(self.mainPicture)
+        self.newScreen("menu", self.mainPicture)
         self.write(MENU_HEADING_POS, "DIFFICULTY LEVEL", 110, title=True)
         for level in LEVELS:
             name = LEVELS[level][0]
@@ -304,12 +369,22 @@ class MathsQuiz:
         self.level = level
         self.score = 0
         self.questionNumber = 1
+        self.counterString = ""
+        self.problemString = ""
+        self.feedbackString = ""
+        self.feedbackColour = NAVY
 
-        self.newScreen(self.quizPicture)
-        self.questionText = self.write(QUESTION_NUMBER_POS, "", 40, NAVY)
-        self.scoreText = self.write(SCORE_POS, "", 40, NAVY)
-        self.problemText = self.write(PROBLEM_POS, "", 110, NAVY)
-        self.feedbackText = self.write(FEEDBACK_POS, "", 40, NAVY)
+        self.drawQuizScreen()
+        self.displayProblem()
+
+    def drawQuizScreen(self):
+        """Draw the quiz screen with the question, score and message that are stored."""
+        self.newScreen("quiz", self.quizPicture)
+        self.questionText = self.write(QUESTION_NUMBER_POS, self.counterString, 40, NAVY)
+        self.scoreText = self.write(SCORE_POS, f"Score: {self.score}", 40, NAVY)
+        self.problemText = self.write(PROBLEM_POS, self.problemString, 110, NAVY)
+        self.feedbackText = self.write(FEEDBACK_POS, self.feedbackString, 40,
+                                       self.feedbackColour)
 
         # The box the player types their answer into
         self.answerEntry = tk.Entry(
@@ -320,7 +395,23 @@ class MathsQuiz:
         self.answerEntry.bind("<Return>", lambda event: self.submitAnswer())
 
         self.submitButton = self.addButton(SUBMIT_POS, "SUBMIT", self.submitAnswer)
-        self.displayProblem()
+
+    def redrawQuiz(self):
+        """Draw the quiz screen again after a resize, keeping what the player typed."""
+        typed = self.answerEntry.get()
+        state = str(self.answerEntry.cget("state"))     # "disabled" while feedback shows
+        self.drawQuizScreen()
+        self.answerEntry.insert(0, typed)
+        self.answerEntry.config(state=state)
+        self.submitButton.config(state=state)
+        if state == "normal":
+            self.answerEntry.focus_set()
+
+    def showFeedback(self, message, colour=NAVY):
+        """Show a message under the answer box (and remember it for redrawing)."""
+        self.feedbackString = message
+        self.feedbackColour = colour
+        self.canvas.itemconfig(self.feedbackText, text=message, fill=colour)
 
     # ----- the quiz -----
     def displayProblem(self):
@@ -339,11 +430,12 @@ class MathsQuiz:
             self.correctAnswer = number1 - number2
 
         self.attempt = 1
-        self.canvas.itemconfig(self.problemText, text=f"{number1} {operation} {number2} =")
-        self.canvas.itemconfig(self.questionText,
-                               text=f"Question {self.questionNumber} of {QUESTIONS}")
+        self.problemString = f"{number1} {operation} {number2} ="
+        self.counterString = f"Question {self.questionNumber} of {QUESTIONS}"
+        self.canvas.itemconfig(self.problemText, text=self.problemString)
+        self.canvas.itemconfig(self.questionText, text=self.counterString)
         self.canvas.itemconfig(self.scoreText, text=f"Score: {self.score}")
-        self.canvas.itemconfig(self.feedbackText, text="")
+        self.showFeedback("")
 
         # Turn the entry box and button back on (they are off while feedback shows)
         self.answerEntry.config(state="normal")
@@ -359,16 +451,13 @@ class MathsQuiz:
             else:
                 points = 5
             self.score += points
-            self.canvas.itemconfig(self.feedbackText, fill=GREEN,
-                                   text=f"Correct! +{points} points")
+            self.showFeedback(f"Correct! +{points} points", GREEN)
             return True
 
         if self.attempt == 1:
-            self.canvas.itemconfig(self.feedbackText, fill=ORANGE,
-                                   text="Not quite. Have one more go!")
+            self.showFeedback("Not quite. Have one more go!", ORANGE)
         else:
-            self.canvas.itemconfig(self.feedbackText, fill=RED,
-                                   text=f"Wrong again. The answer was {self.correctAnswer}.")
+            self.showFeedback(f"Wrong again. The answer was {self.correctAnswer}.", RED)
         return False
 
     def submitAnswer(self):
@@ -377,8 +466,7 @@ class MathsQuiz:
             userAnswer = int(self.answerEntry.get())
         except ValueError:
             # Not a whole number, so show a message and don't use up a try
-            self.canvas.itemconfig(self.feedbackText, fill=RED,
-                                   text="Please enter a whole number (e.g. 12 or -5).")
+            self.showFeedback("Please enter a whole number (e.g. 12 or -5).", RED)
             return
 
         correct = self.isCorrect(userAnswer)
@@ -397,7 +485,7 @@ class MathsQuiz:
             self.answerEntry.delete(0, tk.END)
 
     def displayResults(self):
-        self.newScreen(self.mainPicture)
+        self.newScreen("results", self.mainPicture)
         self.write(RESULT_SCORE_POS, f"Your score: {self.score} / 100", 110, title=True)
         self.write(RESULT_RANK_POS, f"Rank: {getRank(self.score)}", 140, title=True)
         self.addButton(PLAY_AGAIN_POS, "PLAY AGAIN", self.displayMenu, title=True)
