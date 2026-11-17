@@ -92,7 +92,6 @@ INSTRUCTIONS = """Instructions:
       - See your total score and rank.
       - Play again or exit."""
 
-
 def stopWindowsBlurring():
     """On Windows, stop display scaling from making the window look blurry."""
     try:
@@ -100,7 +99,7 @@ def stopWindowsBlurring():
         ctypes.windll.shcore.SetProcessDpiAwareness(1)
     except Exception:
         pass     # not Windows, so there is nothing to do
-
+# AI-assisted (Claude): stops Windows display scaling from blurring the window (uses ctypes).
 
 def loadFonts():
     """On Windows, make the font files in assets/fonts available to this program only."""
@@ -111,6 +110,7 @@ def loadFonts():
             ctypes.windll.gdi32.AddFontResourceExW(path, 0x10, 0)   # 0x10 = just this program
     except Exception:
         pass     # not Windows, so the fonts must be installed on the computer
+# AI-assisted (Claude): loads the font files on Windows using ctypes, which wasn't covered in class.
 
 
 def randomInt(level):
@@ -303,6 +303,7 @@ class MathsQuiz:
             if showProgress:
                 self.root.update()      # keeps the loading dots moving while we load
         return frames, delay
+    # AI-assisted (Claude): loads the frames of an animated GIF with Pillow and keeps only some of them.
 
     def playBackground(self, frames, delay, number, screen):
         """Show one frame of an animated background, then schedule the next one."""
