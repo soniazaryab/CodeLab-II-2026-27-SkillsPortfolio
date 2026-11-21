@@ -1,0 +1,4 @@
+# Install everything with:  pip install -r requirements.txt
+pillow       # loads and resizes the background pictures (Exercises 1 and 2)
+pygame       # plays the narration, laugh and background music (Exercise 2)
+edge-tts     # only needed to run make_audio.py, which creates the narration files (Exercise 2)
